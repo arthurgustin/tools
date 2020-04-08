@@ -4,7 +4,7 @@ go 1.11
 
 require (
 	github.com/sergi/go-diff v1.1.0
-	golang.org/x/tools v0.0.0-20191130070609-6e064ea0cf2d
+	golang.org/x/tools v0.0.0-20200408032209-46bd65c8538f
 	honnef.co/go/tools v0.0.1-2020.1.3
 	mvdan.cc/xurls/v2 v2.1.0
 )

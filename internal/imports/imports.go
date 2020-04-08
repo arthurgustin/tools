@@ -23,10 +23,7 @@ import (
 	"io/ioutil"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
-
-	"golang.org/x/tools/go/ast/astutil"
 )
 
 // Options is golang.org/x/tools/imports.Options with extra internal-only options.
@@ -167,8 +164,8 @@ func initialize(filename string, src []byte, opt *Options) ([]byte, *Options, er
 
 func formatFile(fileSet *token.FileSet, file *ast.File, src []byte, adjust func(orig []byte, src []byte) []byte, opt *Options) ([]byte, error) {
 	mergeImports(opt.Env, fileSet, file)
-	sortImports(opt.Env, fileSet, file)
-	imps := astutil.Imports(fileSet, file)
+	//sortImports(opt.Env, fileSet, file)
+	/*imps := astutil.Imports(fileSet, file)
 	var spacesBefore []string // import paths we need spaces before
 	for _, impSection := range imps {
 		// Within each block of contiguous imports, see if any
@@ -185,7 +182,7 @@ func formatFile(fileSet *token.FileSet, file *ast.File, src []byte, adjust func(
 			lastGroup = groupNum
 		}
 
-	}
+	}*/
 
 	printerMode := printer.UseSpaces
 	if opt.TabIndent {
@@ -202,17 +199,31 @@ func formatFile(fileSet *token.FileSet, file *ast.File, src []byte, adjust func(
 	if adjust != nil {
 		out = adjust(src, out)
 	}
-	if len(spacesBefore) > 0 {
-		out, err = addImportSpaces(bytes.NewReader(out), spacesBefore)
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	out, err = format.Source(out)
 	if err != nil {
 		return nil, err
 	}
+	out, err = removeImportSpaces(bytes.NewReader(out))
+	if err != nil {
+		return nil, err
+	}
+	/*if len(spacesBefore) > 0 {
+		out, err = addImportSpaces2(bytes.NewReader(out), strings.Split(opt.Env.LocalPrefix, ","))
+		if err != nil {
+			return nil, err
+		}
+	}*/
+	groups := strings.Split(opt.Env.LocalPrefix, "|")
+	finalGroups := make([][]string, len(groups))
+	for i,g := range groups {
+		finalGroups[i] = strings.Split(g, ",")
+	}
+	out, err = addImportSpaces2(bytes.NewReader(out), finalGroups)
+	if err != nil {
+		return nil, err
+	}
+
 	return out, nil
 }
 
@@ -403,6 +414,100 @@ func addImportSpaces(r io.Reader, breaks []string) ([]byte, error) {
 		}
 
 		fmt.Fprint(&out, s)
+	}
+	return out.Bytes(), nil
+}
+
+func addImportSpaces2(r io.Reader, groups [][]string) ([]byte, error) {
+	var out bytes.Buffer
+	in := bufio.NewReader(r)
+	inImports := false
+	done := false
+	importGroups := make([][]string, len(groups))
+	var foundGroupElement bool
+	for {
+		foundGroupElement = false
+		s, err := in.ReadString('\n')
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+		if !inImports && !done && strings.HasPrefix(s, "import") {
+			inImports = true
+		}
+		if inImports && strings.Contains(s, ")") && !done {
+			for _, importGroup := range importGroups {
+				if len(importGroup) == 0 {
+					continue
+				}
+				out.WriteByte('\n')
+				for _, importElement := range importGroup {
+					fmt.Fprint(&out, importElement)
+				}
+			}
+			inImports = false
+		}
+		if inImports && (strings.HasPrefix(s, "var") ||
+			strings.HasPrefix(s, "func") ||
+			strings.HasPrefix(s, "const") ||
+			strings.HasPrefix(s, "type")) ||
+			strings.Contains(s, ")") {
+			done = true
+			inImports = false
+		}
+		if inImports && len(groups) > 0 {
+			if m := impLine.FindStringSubmatch(s); m != nil {
+				for i, group := range groups {
+					for _, groupElement := range group {
+						if strings.Contains(m[1], groupElement) {
+							importGroups[i] = append(importGroups[i], s)
+							foundGroupElement = true
+						}
+					}
+				}
+			}
+		}
+		if !foundGroupElement {
+			fmt.Fprint(&out, s)
+		}
+	}
+
+	return out.Bytes(), nil
+}
+
+func removeImportSpaces(r io.Reader) ([]byte, error) {
+	var out bytes.Buffer
+	in := bufio.NewReader(r)
+	inImports := false
+	done := false
+	for {
+		s, err := in.ReadString('\n')
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, err
+		}
+
+		if !inImports && !done && strings.HasPrefix(s, "import") {
+			inImports = true
+		}
+		if inImports && (strings.HasPrefix(s, "var") ||
+			strings.HasPrefix(s, "func") ||
+			strings.HasPrefix(s, "const") ||
+			strings.HasPrefix(s, ")") ||
+			strings.HasPrefix(s, "type")) {
+			done = true
+			inImports = false
+		}
+		if inImports {
+			if s != "\n" {
+				fmt.Fprint(&out, s)
+			}
+		} else {
+			fmt.Fprint(&out, s)
+		}
+
 	}
 	return out.Bytes(), nil
 }

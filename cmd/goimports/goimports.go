@@ -31,6 +31,7 @@ var (
 	write  = flag.Bool("w", false, "write result to (source) file instead of stdout")
 	doDiff = flag.Bool("d", false, "display diffs instead of rewriting files")
 	srcdir = flag.String("srcdir", "", "choose imports as if source code is from `dir`. When operating on a single file, dir may instead be the complete file name.")
+	ignorePath = flag.String("i", "", "ignore files that contain this argument in their path")
 
 	verbose bool // verbose logging
 
@@ -96,6 +97,9 @@ const (
 )
 
 func processFile(filename string, in io.Reader, out io.Writer, argType argumentType) error {
+	if *ignorePath != "" && strings.Contains(filename, *ignorePath) {
+		return nil
+	}
 	opt := options
 	if argType == fromStdin {
 		nopt := *options
